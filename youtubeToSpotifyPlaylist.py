@@ -4,21 +4,31 @@ import google_auth_oauthlib.flow
 import googleapiclient.discovery
 import spotipy
 import spotipy.util as util
+from dotenv import load_dotenv
 
-# Replace with your own API keys
-YOUTUBE_API_KEY = "AIzaSyBbuHGXhjF9MEEefeCkGQCFiBnazyTCvQM"
-SPOTIFY_CLIENT_ID = "2e21bc67c2d24c67ba71615295b77cdf"
-SPOTIFY_CLIENT_SECRET = "b47063e6e47b47a7b17262141929aeaf"
-SPOTIFY_REDIRECT_URI = "http://localhost:8888/callback"  # For example, "http://localhost:8888/callback"
+load_dotenv()
+
+# Import API keys from env file
+youtube_api_key = os.getenv("YOUTUBE_API_KEY")
+spotify_client_id = os.getenv("SPOTIFY_CLIENT_ID") # user id
+spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET") # access token
+spotify_redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI")
+
+#test
+# print("secrets:")
+# print("youtube_api_key: " + youtube_api_key)
+# print("spotify_client_id: " + spotify_client_id)
+# print("spotify_client_secret: "+ spotify_client_secret)
+# print("spotify_redirect_uri: " + spotify_redirect_uri)
 
 # YouTube playlist ID, extract it from the playlist URL
-YOUTUBE_PLAYLIST_ID = "PLpek_Ec0g-9Bmnf9xcSAxmj9RG2oMKyty"
+youtube_playlist_id = os.getenv("YOUTUBE_PLAYLIST_ID")
 
 # Function to authenticate with YouTube Data API
 def youtube_authenticate():
     scopes = ["https://www.googleapis.com/auth/youtube.readonly"]
     flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
-        "client_secrets.json", scopes
+        "client_secret_204729676666_k2c2b39cbui38s3uj1snrif19cci17c3_apps.json", scopes
     )
     credentials = flow.run_console()
     youtube = googleapiclient.discovery.build("youtube", "v3", credentials=credentials)
@@ -29,11 +39,11 @@ def get_youtube_playlist_items(youtube, playlist_id):
     request = youtube.playlistItems().list(
         part="snippet",
         playlistId=playlist_id,
-        maxResults=50,
+        maxResults=1000
     )
     response = request.execute()
     return response["items"]
- 
+
 # Function to extract video IDs from YouTube playlist items
 def get_video_ids(youtube_items):
     video_ids = [item["snippet"]["resourceId"]["videoId"] for item in youtube_items]
@@ -42,11 +52,11 @@ def get_video_ids(youtube_items):
 # Function to authenticate with Spotify API
 def spotify_authenticate():
     token = util.prompt_for_user_token(
-        username="iouvzoi4qjplgohvy5dhkjb8y",
-        scope="playlist-modify-public",
-        client_id=SPOTIFY_CLIENT_ID,
-        client_secret=SPOTIFY_CLIENT_SECRET,
-        redirect_uri=SPOTIFY_REDIRECT_URI,
+        username="iouvzoi4qjplgohvy5dhkjb8y", # username
+        scope="playlist-modify-public", #permissions
+        client_id=spotify_client_id,
+        client_secret=spotify_client_secret,
+        redirect_uri=spotify_redirect_uri,
     )
     sp = spotipy.Spotify(auth=token)
     return sp
@@ -70,32 +80,70 @@ def add_tracks_to_spotify_playlist(sp, playlist_id, track_ids):
         sp.me()["id"], playlist_id=playlist_id, tracks=track_ids
     )
 
+
+#---------------testing---------------#
+    
+def manage_results_file(filename, video_ids):
+
+    # Create results file
+    with open(filename, "w+") as f:
+        for video in video_ids:
+            f.write(video + "\n")
+
+    # Checking repeated elements in results file
+        seen = set()
+        repeated_videos = []
+
+        with open('results.txt') as f:
+            for line in f:
+                line_check = line.strip().lower()
+                if line_check in seen:
+                    repeated_videos.append(line.strip())
+                else:
+                    seen.add(line_check)
+
+        # Print repeated videos
+        if repeated_videos:
+            print("Repeated videos:")
+            for video in repeated_videos:
+                print(video)
+        else:
+            print("No repeated videos found.")
+
+    #---------------testing---------------#
+
+
 def main():
+    filename_results = "results.txt"
     # YouTube authentication
     youtube = youtube_authenticate()
-    youtube_playlist_items = get_youtube_playlist_items(youtube, YOUTUBE_PLAYLIST_ID)
+    youtube_playlist_items = get_youtube_playlist_items(youtube, youtube_playlist_id)
+    # print(youtube_playlist_items)
     video_ids = get_video_ids(youtube_playlist_items)
+    manage_results_file(filename_results,video_ids)
+    print(video_ids)
 
     # Spotify authentication
     sp = spotify_authenticate()
 
     # Create a new Spotify playlist with the same name as the YouTube playlist
-    youtube_playlist_name = youtube_playlist_items[0]["snippet"]["playlistTitle"]
+    youtube_playlist_name = youtube_playlist_items[0]["snippet"]["title"]
     spotify_playlist_id = create_spotify_playlist(sp, youtube_playlist_name)
 
+    #tracks not found
+    filename_errors = "errors.txt"
+
     # Convert YouTube video IDs to Spotify track IDs and add them to the playlist
-    for video_id in video_ids:
-        youtube_url = "https://www.youtube.com/watch?v={}".format(video_id)
-        track_name = (
-            youtube.playlistItems().list(part="snippet", id=video_id)
-            .execute()["items"][0]["snippet"]["title"]
-        )
-        track_name = re.sub(r"\([^)]*\)", "", track_name).strip() # Remove parenthesis and their contents
+    playlist_items = youtube.playlistItems().list(part="snippet", playlistId=youtube_playlist_id).execute()
+    for item in playlist_items["items"]:
+        track_name = item["snippet"]["title"]
+        track_name = re.sub(r"\([^)]*\)", "", track_name).strip()
+        print(track_name + " succesfully added")
         track_id = get_spotify_track_id(sp, track_name)
         if track_id:
             add_tracks_to_spotify_playlist(sp, spotify_playlist_id, [track_id])
         else:
-            print("Could not find {track_name} on Spotify.")
+            print(f"Could not find {track_name} on Spotify.")
 
     print("Playlist successfully created on Spotify.")
 
